@@ -808,6 +808,25 @@ class IPAddress(PrimaryModel):
                         )
                     })
 
+        # Check for primary IP assignment that doesn't match the assigned device/VM
+        if self.pk:
+            for cls, attr in ((Device, 'device'), (VirtualMachine, 'virtual_machine')):
+                parent = cls.objects.filter(
+                    Q(primary_ip4=self) | Q(primary_ip6=self)).first()
+                if parent and getattr(self.assigned_object, attr, None) != parent:
+                    # Check for a NAT relationship
+                    if not self.nat_inside or getattr(self.nat_inside.assigned_object, attr, None) != parent:
+                        raise ValidationError({
+                            'interface': f"IP address is primary for {cls._meta.model_name} {parent} but "
+                                         f"not assigned to it!"
+                        })
+
+        # Check if assigned object exists
+        if (self.assigned_object_id is not None or self.assigned_object_type is not None) and self.assigned_object is None:
+            raise ValidationError({
+                'assigned_object': f"Assigned Object does not exist."
+            })
+
         # Validate IP status selection
         if self.status == IPAddressStatusChoices.STATUS_SLAAC and self.family != 6:
             raise ValidationError({
